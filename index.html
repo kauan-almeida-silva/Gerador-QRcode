@@ -16,13 +16,6 @@
     img { max-width: 100%; height: auto; image-rendering: pixelated }
     a { color: #245eea }
     #endereco { overflow-wrap: anywhere }
-    @media print {
-      @page { size: A4; margin: 20mm }
-      body { max-width: none; margin: 0; padding: 0; text-align: center }
-      form, #erro, .acoes { display: none }
-      img { width: 80mm }
-      #endereco { font-size: 10pt }
-    }
   </style>
 </head>
 <body>
@@ -39,7 +32,6 @@
     <div class="acoes">
       <p><a id="salvar" download="qrcode.gif">Salvar imagem</a></p>
       <button id="pdf" type="button">Salvar em PDF</button>
-      <small>Na janela de impressão, escolha Salvar como PDF</small>
     </div>
   </div>
   <script>
@@ -57,13 +49,63 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
     const enderecoImpresso = document.getElementById('endereco');
     const pdf = document.getElementById('pdf');
 
+    let codigoAtual = null;
+
     pdf.onclick = function () {
-      if (!resultado.hidden) window.print();
+      if (!codigoAtual) return;
+      const quantidade = codigoAtual.getModuleCount();
+      const escala = 280 / (quantidade + 8);
+      let conteudo = `q\n${escala} 0 0 ${escala} 157.5 470 cm\n0 g\n`;
+
+      for (let linha = 0; linha < quantidade; linha++) {
+        for (let coluna = 0; coluna < quantidade; coluna++) {
+          if (codigoAtual.isDark(linha, coluna)) conteudo += `${coluna + 4} ${quantidade + 3 - linha} 1 1 re\n`;
+        }
+      }
+
+      conteudo += 'f\nQ\nBT /F1 18 Tf 259.7 785 Td (QR Code) Tj ET\n';
+      conteudo += 'BT /F1 8 Tf 10 TL 50 440 Td\n';
+      const linhas = enderecoImpresso.textContent.match(/.{1,96}/g);
+      for (const linha of linhas) {
+        const texto = linha.replace(/[\\()]/g, '\\$&');
+        conteudo += `(${texto}) Tj T*\n`;
+      }
+      conteudo += 'ET\n';
+
+      const tamanho = texto => new TextEncoder().encode(texto).length;
+      const objetos = [
+        '<< /Type /Catalog /Pages 2 0 R >>',
+        '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+        '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>',
+        `<< /Length ${tamanho(conteudo)} >>\nstream\n${conteudo}endstream`,
+        '<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>'
+      ];
+      let documento = '%PDF-1.4\n';
+      const posicoes = [0];
+      objetos.forEach((objeto, indice) => {
+        posicoes.push(tamanho(documento));
+        documento += `${indice + 1} 0 obj\n${objeto}\nendobj\n`;
+      });
+      const inicio = tamanho(documento);
+      documento += `xref\n0 6\n0000000000 65535 f \n`;
+      for (const posicao of posicoes.slice(1)) documento += `${String(posicao).padStart(10, '0')} 00000 n \n`;
+      documento += `trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${inicio}\n%%EOF\n`;
+
+      const arquivo = new Blob([documento], { type: 'application/pdf' });
+      const url = URL.createObjectURL(arquivo);
+      const download = document.createElement('a');
+      download.href = url;
+      download.download = 'qrcode.pdf';
+      document.body.appendChild(download);
+      download.click();
+      download.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
     };
 
     qrcode.stringToBytes = qrcode.stringToBytesFuncs['UTF-8'];
 
     link.oninput = function () {
+      codigoAtual = null;
       resultado.hidden = true;
       erro.textContent = '';
     };
@@ -85,6 +127,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
         imagem.src = codigo.createDataURL(6, 24);
         salvar.href = imagem.src;
         enderecoImpresso.textContent = endereco.href;
+        codigoAtual = codigo;
         resultado.hidden = false;
       } catch (falha) {
         erro.textContent = falha instanceof TypeError ? 'Cole um link válido' : falha.message || 'Não foi possível gerar o QR Code';
@@ -93,4 +136,5 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
   </script>
 </body>
 </html>
+
 
